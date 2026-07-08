@@ -56,6 +56,44 @@ for key in $KEYS; do
   fi
 done
 
+# --- Best effort: expose an 'scp' binary so file transfers work ---------------
+# dropbearmulti may include the scp applet; without an 'scp' in the remote PATH,
+# "scp -O" from the client fails with "scp: command not found".
+if ./dropbearmulti 2>&1 | grep -qi scp; then
+  for d in /usr/local/bin /usr/bin /bin; do
+    if [ -d "$d" ] && [ -w "$d" ]; then
+      ln -sf "$BASE_DIR/dropbearmulti" "$d/scp" 2>/dev/null && break
+    fi
+  done
+fi
+
+# --- Show connection info on the display instead of a black screen ------------
+# EmuELEC ships ffplay, so we display a static PNG with the connection details.
+# Fallback: plain text to /dev/console.
+INFO_PID=""
+INFO_PNG="$BASE_DIR/icons/ssh_info.png"
+if command -v ffplay >/dev/null 2>&1 && [ -f "$INFO_PNG" ]; then
+  ffplay -fs -loop 0 -loglevel quiet "$INFO_PNG" >/dev/null 2>&1 &
+  INFO_PID=$!
+else
+  clear > /dev/console 2>/dev/null || true
+  {
+    echo ""
+    echo "  === SSH over USB - SERVER RUNNING ==="
+    echo ""
+    echo "  Console IP : 192.168.7.2"
+    echo "  PC IP      : 192.168.7.1 (set it manually, /24)"
+    echo "  Login      : root / emuelec"
+    echo ""
+    echo "  ssh root@192.168.7.2"
+    echo ""
+    echo "  EXIT: press RESET (or run 'reboot' via ssh)"
+  } > /dev/console 2>/dev/null || true
+fi
+
+# Kill the info screen when the server stops
+trap '[ -n "$INFO_PID" ] && kill "$INFO_PID" 2>/dev/null' EXIT INT TERM
+
 echo "Starting Dropbear SSH server..."
 ./dropbearmulti dropbear -p 22 \
   -r dropbear_rsa_host_key \
