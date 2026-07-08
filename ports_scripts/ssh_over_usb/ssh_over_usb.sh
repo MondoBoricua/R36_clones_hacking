@@ -56,15 +56,28 @@ for key in $KEYS; do
   fi
 done
 
-# --- Best effort: expose an 'scp' binary so file transfers work ---------------
-# dropbearmulti may include the scp applet; without an 'scp' in the remote PATH,
-# "scp -O" from the client fails with "scp: command not found".
-if ./dropbearmulti 2>&1 | grep -qi scp; then
-  for d in /usr/local/bin /usr/bin /bin; do
-    if [ -d "$d" ] && [ -w "$d" ]; then
-      ln -sf "$BASE_DIR/dropbearmulti" "$d/scp" 2>/dev/null && break
+# --- Expose an 'scp' binary so file transfers work ----------------------------
+# dropbearmulti includes the scp applet, but without an 'scp' in the remote
+# PATH, "scp -O" from the client fails with "scp: command not found".
+if ./dropbearmulti 2>&1 | grep -qi "'scp'"; then
+  # Easy case: some dir in PATH is writable
+  if ! command -v scp >/dev/null 2>&1; then
+    for d in /usr/local/bin /usr/bin /bin; do
+      if [ -d "$d" ] && [ -w "$d" ]; then
+        ln -sf "$BASE_DIR/dropbearmulti" "$d/scp" 2>/dev/null && break
+      fi
+    done
+  fi
+  # Read-only rootfs (EmuELEC squashfs): shadow /usr/sbin with a tmpfs copy
+  # and drop the symlink there. Costs ~9MB of tmpfs, reverts on reboot.
+  # Tested on an R36Max, EmuELEC 4.7.
+  if ! command -v scp >/dev/null 2>&1; then
+    if mkdir -p /tmp/.sshusb_sbin 2>/dev/null \
+       && cp -a /usr/sbin/. /tmp/.sshusb_sbin/ 2>/dev/null \
+       && mount --bind /tmp/.sshusb_sbin /usr/sbin 2>/dev/null; then
+      ln -sf "$BASE_DIR/dropbearmulti" /usr/sbin/scp 2>/dev/null || true
     fi
-  done
+  fi
 fi
 
 # --- Show connection info on the display instead of a black screen ------------
